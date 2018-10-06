@@ -72,7 +72,128 @@ test_set_x = test_set_x_flatten/255.
 
 # numpy 数组的横向合并
 
-print train_set_x_orig
 train_set = np.hstack((train_set_x, train_set_y.T))
 test_set = np.hstack((test_set_x, test_set_y.T))
 
+# 定义reader
+
+# 读取训练数据或测试数据
+def read_data(data_set):
+    """
+        一个reader
+        Args:
+            data_set -- 要获取的数据集
+        Return:
+            reader -- 用于获取训练数据集及其标签的生成器generator
+    """
+    def reader():
+        """
+        一个reader
+        Args:
+        Return:
+            data[:-1], data[-1:] -- 使用yield返回生成器(generator)，
+                    data[:-1]表示前n-1个元素，也就是训练数据，data[-1:]表示最后一个元素，也就是对应的标签
+        """
+        for data in data_set:
+            yield data[:-1], data[-1]
+    return reader
+
+# 开始训练
+
+# 使用CPU训练
+use_cuda = False
+place = fluid.CUDAPlace(0) if use_cuda else fluid.CPUPlace()
+
+# 配置网络结构和设置参数
+
+def infer_func():
+    x = fluid.layers.data(name='x', shape=[DATA_DIM], dtype='float32')
+    y_predict = fluid.layers.fc(input=x, size=2, act='softmax')
+    return y_predict
+
+feeder = None
+                          
+def train_func():
+    global feeder
+    #输入层与标签层作为输入传进函数，这里只需定义输出层与损失函数
+    
+    y_predict = infer_func()
+    y = fluid.layers.data(name='y', shape=[1], dtype='int64')
+    cost = fluid.layers.cross_entropy(input=y_predict, label=y)
+    avg_cost = fluid.layers.mean(cost)
+
+    feeder = fluid.DataFeeder(place=place, feed_list=['x', 'y'])
+    return [avg_cost, y_predict]
+
+# 这里定义学习率
+def optimizer_func():
+    return fluid.optimizer.Adam(learning_rate=0.0001)
+
+# 创建训练器
+
+trainer = fluid.Trainer(
+    train_func= train_func,
+    place= place,
+    optimizer_func= optimizer_func)
+
+feed_order=['x','y']
+
+BATCH_SIZE=4
+
+# 设置训练reader
+train_reader = paddle.batch(
+    paddle.reader.shuffle(
+        read_data(train_set), buf_size=500),
+    batch_size=BATCH_SIZE)
+
+#设置测试 reader
+test_reader = paddle.batch(
+    paddle.reader.shuffle(
+        read_data(test_set), buf_size=500),
+    batch_size=BATCH_SIZE)
+
+save_dirname="recognize_plane_inference.model"
+
+# 定义回调函数
+
+# Plot data
+from paddle.v2.plot import Ploter
+train_title = "Train cost"
+test_title = "Test cost"
+plot_cost = Ploter(train_title, test_title)
+
+step = 0
+# 事件处理
+def event_handler_plot(event):
+    global step
+    if isinstance(event, fluid.EndStepEvent):
+        if event.step % 2 == 0: # 若干个batch,记录cost
+            if event.metrics[0] < 10:
+                plot_cost.append(train_title, step, event.metrics[0])
+                plot_cost.plot()
+        if event.step % 20 == 0: # 若干个batch,记录cost
+            test_metrics = trainer.test(
+                reader=test_reader, feed_order=feed_order)
+            if test_metrics[0] < 10:
+                plot_cost.append(test_title, step, test_metrics[0])
+                plot_cost.plot()
+
+#             if test_metrics[0] < 1.0:
+#                 # 如果准确率达到阈值，则停止训练
+#                 print('loss is less than 10.0, stop')
+#                 trainer.stop()
+
+        # 将参数存储，用于预测使用
+        if save_dirname is not None:
+            trainer.save_params(save_dirname)
+    step += 1
+   # plot_cost.savefig("./planecost.jpg")
+   # 考虑一下图片的实时绘制和保存问题
+# 开始训练了
+
+EPOCH_NUM = 20
+trainer.train(
+    reader=train_reader,
+    num_epochs=EPOCH_NUM,
+    event_handler=event_handler_plot,
+    feed_order=feed_order)
