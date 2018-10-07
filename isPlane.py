@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 
 import paddle
 import paddle.fluid as fluid
+from paddle.v2.plot import Ploter
 
 
 # 数据读取
@@ -112,11 +113,10 @@ def infer_func():
     return y_predict
 
 feeder = None
-                          
+
+#输入层与标签层作为输入传进函数，这里只需定义输出层与损失函数                          
 def train_func():
     global feeder
-    #输入层与标签层作为输入传进函数，这里只需定义输出层与损失函数
-    
     y_predict = infer_func()
     y = fluid.layers.data(name='y', shape=[1], dtype='int64')
     cost = fluid.layers.cross_entropy(input=y_predict, label=y)
@@ -157,7 +157,7 @@ save_dirname="recognize_plane_inference.model"
 # 定义回调函数
 
 # Plot data
-from paddle.v2.plot import Ploter
+
 train_title = "Train cost"
 test_title = "Test cost"
 plot_cost = Ploter(train_title, test_title)
@@ -183,17 +183,92 @@ def event_handler_plot(event):
 #                 print('loss is less than 10.0, stop')
 #                 trainer.stop()
 
-        # 将参数存储，用于预测使用
+   # 将参数存储，用于预测使用
         if save_dirname is not None:
             trainer.save_params(save_dirname)
     step += 1
    # plot_cost.savefig("./planecost.jpg")
    # 考虑一下图片的实时绘制和保存问题
-# 开始训练了
 
-EPOCH_NUM = 20
-trainer.train(
-    reader=train_reader,
-    num_epochs=EPOCH_NUM,
-    event_handler=event_handler_plot,
-    feed_order=feed_order)
+print "请选择您要进行的操作？0:训练，1:预测"
+choice = input()
+
+# 开始训练了
+if choice == 0:
+    EPOCH_NUM = 20
+    trainer.train(
+        reader=train_reader,
+        num_epochs=EPOCH_NUM,
+        event_handler=event_handler_plot,
+        feed_order=feed_order)
+
+
+# 接下来是预测
+elif choice == 1:
+    inferencer = fluid.Inferencer(
+        infer_func=infer_func, param_path=save_dirname, place=place)
+    BATCH_SIZE = 10
+    test_reader = paddle.batch(
+        read_data(test_set), batch_size=BATCH_SIZE
+    )
+
+# 取出一个 mini-batch
+    for mini_batch in test_reader(): 
+        # 转化为 numpy 的 ndarray 结构，并且设置数据类型
+        test_x = np.array([data[0] for data in mini_batch]).astype("float32")
+        test_y = np.array([data[1] for data in mini_batch]).astype("int64")
+        # 真实进行预测
+        mini_batch_result = inferencer.infer({'x': test_x})
+        
+        # 打印预测结果
+        mini_batch_result = np.argsort(mini_batch_result) #找出可能性最大的列标，升序排列
+        mini_batch_result = mini_batch_result[0][:, -1]  #把这些列标拿出来
+        print('预测结果：%s'%mini_batch_result)
+        
+        # 打印真实结果    
+        label = np.array(test_y) # 转化为 label
+        print('真实结果：%s'%label)
+        break
+    
+# 定义评估效果的函数
+    
+    # 查看百分比
+    def right_ratio(right_counter, total):
+        ratio = float(right_counter)/total
+        return ratio
+    
+    def evl(data_set):
+        total = 0    #操作的元素的总数
+        right_counter = 0  #正确的元素
+    
+        pass_num = 0
+        for mini_batch in data_set():
+            pass_num += 1
+            #预测
+            test_x = np.array([data[0] for data in mini_batch]).astype("float32")
+            test_y = np.array([data[1] for data in mini_batch]).astype("int64")
+            mini_batch_result = inferencer.infer({'x': test_x})
+            
+            #预测的结果
+            mini_batch_result = np.argsort(mini_batch_result) #找出可能性最大的列标，升序排列
+            mini_batch_result = mini_batch_result[0][:, -1]  #把这些列标拿出来
+            # print('预测结果：%s'%mini_batch_result)
+    
+            label = np.array(test_y) # 转化为 label
+            # print('真实结果：%s'%label)
+    
+            #计数
+            label_len = len(label)
+            total += label_len
+            for i in xrange(label_len):
+                if mini_batch_result[i] == label[i]:
+                    right_counter += 1
+    
+        ratio = right_ratio(right_counter, total)
+        return ratio
+    
+    ratio = evl(train_reader)
+    print('训练数据的正确率 %0.2f%%'%(ratio*100))
+    
+    ratio = evl(test_reader)
+    print('预测数据的正确率 %0.2f%%'%(ratio*100))

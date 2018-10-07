@@ -1,0 +1,7 @@
+可能使准确率更高的修改点：
+1、y_predict层的size和激活函数
+2、learning_rate学习率
+3、train_reader 和 test_reader 前的BATCH_SIZE是迭代训练的数据量，其中的两次buf_size是每次提取的数据量大小
+4、真实训练中的数据量大小：EPOCH_NUM
+
+
