@@ -20,8 +20,6 @@ train_keys = train_dataset.keys()
 train_set_x_orig = np.array(train_dataset[train_keys[0]][:]) # train set
 train_set_y_orig = np.array(train_dataset[train_keys[1]][:]) # train label
 train_set_y = train_set_y_orig.reshape((1, train_set_y_orig.shape[0]))
-print train_set_x_orig.shape
-
 
 test_dataset = h5py.File('data/test_planevnonplane.h5', "r")
 test_keys  =test_dataset.keys()
