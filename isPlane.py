@@ -138,7 +138,7 @@ trainer = fluid.Trainer(
 
 feed_order=['x','y']
 
-BATCH_SIZE=4
+BATCH_SIZE=24
 
 # 设置训练reader
 train_reader = paddle.batch(
@@ -195,7 +195,7 @@ choice = input()
 
 # 开始训练了
 if choice == 0:
-    EPOCH_NUM = 20
+    EPOCH_NUM = 40
     trainer.train(
         reader=train_reader,
         num_epochs=EPOCH_NUM,
@@ -207,7 +207,7 @@ if choice == 0:
 elif choice == 1:
     inferencer = fluid.Inferencer(
         infer_func=infer_func, param_path=save_dirname, place=place)
-    BATCH_SIZE = 10
+    BATCH_SIZE = 40
     test_reader = paddle.batch(
         read_data(test_set), batch_size=BATCH_SIZE
     )
